@@ -1,50 +1,54 @@
 <#
 .SYNOPSIS
-This script connects to Exchange Online, gets the configuration of various policies, and exports the configurations to XML files.
+
+A script to export a collection of policy configurations from Exchange Online to local XML files.
 
 .DESCRIPTION
-The script imports the Exchange Online Management module and connects to Exchange Online without showing the banner. 
-It retrieves the name of the organization and defines a directory in the user's home folder where the policy configurations 
-will be exported to. If this directory doesn't exist, the script creates it.
 
-The script defines a hash table of policies and their corresponding "Get" commands. It then loops through each policy, retrieves 
-the policy using the respective command, and exports it to an XML file in the previously defined directory. 
-
-The file name is the name of the policy. After all the policy configurations have been exported, the script disconnects 
-from Exchange Online.
+This script connects to an Exchange Online instance without showing the default connection banner.
+It then retrieves the name of the current organization and uses this name to create an export directory in the user's home directory.
+If the directory does not exist, it is created. It then executes a list of Get-* commands associated with various policy types (anti-phishing, safe links, etc.),
+exporting each policy's configuration to an XML file in the export directory. Finally, it disconnects from the Exchange Online session without user confirmation.
 
 .INPUTS
-No inputs. The script retrieves the necessary information internally.
+
+None. The script is self-contained and does not accept any inputs.
 
 .OUTPUTS
-XML files representing the configuration of various policies. The files are saved in a directory under the user's home folder.
+
+XML files. For each policy type, an XML file is created in the user's home directory under a subdirectory named after the current organization.
 
 .EXAMPLE
-PS C:\> .\ExportPolicyConfigs.ps1
+
+PS C:\> .\ExportPolicies.ps1
+
+This command runs the script and exports policy configurations to the user's home directory.
 
 .NOTES
-The script requires that the Exchange Online Management module is installed and that the user has the necessary permissions 
-to retrieve the policy configurations.
+
+- The script requires the ExchangeOnlineManagement module to be installed.
+- The script should be run with an account that has sufficient permissions to access and execute commands on the Exchange Online instance and retrieve policy configurations.
+- The script creates one XML file for each policy type in the predefined list. The XML file includes the full configuration for that policy type.
 #>
 
-# Import the EXO V2 module
+# Importing the Exchange Online Management module
 Import-Module ExchangeOnlineManagement
 
-# Connect to Exchange Online
+# Establishing a connection to Exchange Online without showing the default connection banner
 Connect-ExchangeOnline -ShowBanner:$false
 
-# Get the name of the Organization
+# Retrieving the name of the current organization
 $Organization = (Get-OrganizationConfig).Name
 
-# Define the directory to export to
+# Creating a directory path by joining the user's home directory and the name of the organization
 $ExportDirectory = Join-Path -Path $HOME -ChildPath $Organization
 
-# Ensure the directory exists
+# Checking if the export directory exists, if not, create it
 if (!(Test-Path -Path $ExportDirectory)) {
     New-Item -ItemType Directory -Path $ExportDirectory | Out-Null
 }
 
-# Define policies and their respective Get commands
+# Defining a hash table of policy types and their corresponding Get-* commands
 $Policies = @{
     "AntiPhishPolicy" = "Get-AntiphishPolicy";
     "SafeLinksPolicy" = "Get-SafeLinksPolicy";
@@ -59,12 +63,15 @@ $Policies = @{
     "AcceptedDomain" = "Get-AcceptedDomain";
 }
 
-# Loop through each policy and export it
+# Iterating through each policy in the Policies hash table
 foreach ($Policy in $Policies.GetEnumerator()) {
+    # Store the command string associated with the current policy
     $Command = $Policy.Value
+    # Create a file path for the export file by joining the export directory and the current policy name
     $Path = Join-Path -Path $ExportDirectory -ChildPath "$($Policy.Name).xml"
+    # Execute the command, piping its output to an XML file
     Invoke-Expression -Command "$Command | Export-Clixml -Path `"$Path`""
 }
 
-# Disconnect from Exchange Online
+# Disconnecting the Exchange Online session without asking for user confirmation
 Disconnect-ExchangeOnline -Confirm:$false
