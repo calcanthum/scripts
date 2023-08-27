@@ -1,10 +1,11 @@
-# User-configurable settings
+# settings
 $minRAMSizeGB = 8
 $targetMediaType = "HDD"
 $outputFilePath = "C:\Windows\Temp\cw_machine_upgrade_info.txt"
-$debugMode = $false
+$debugMode = $true
 $debugFilePath = "C:\Windows\Temp\cw_machine_upgrade_debug.txt"
 
+# debug
 function Write-DebugInfo {
     param ([string]$message)
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -13,44 +14,72 @@ function Write-DebugInfo {
     }
 }
 
-# Function to determine disk type and size of system disk (C:)
+# c drive type and size
 function Get-DiskInfo {
     $systemDiskPartition = Get-Partition | Where-Object { $_.DriveLetter -eq 'C' }
     $systemDisk = Get-PhysicalDisk | Where-Object { $_.DeviceID -eq $systemDiskPartition.DiskNumber }
     $sizeGB = [math]::Round($systemDisk.Size / 1GB)
     return "$($systemDisk.MediaType), ${sizeGB}GB"
 }
-
-# Function to check RAM size, form factor, and speed
+# ram size, speed, form factor
 function Get-RAMInfo {
     $memory = Get-WmiObject -Class Win32_PhysicalMemory
     $ramInfo = @()
     $moduleIndex = 1
+    
+    # map speed to type
+    $ddrTypeMapping = @(
+        @{Start=400; End=1066; Type="DDR2 (Guess)"},
+        @{Start=800; End=2133; Type="DDR3 (Guess)"},
+        @{Start=2133; End=4266; Type="DDR4 (Guess)"},
+        @{Start=4800; End=10000; Type="DDR5 (Guess)"}
+    )
+    
     foreach ($m in $memory) {
         $speed = $m.Speed
-        $ddrType = ""
-        if ($speed -ge 400 -and $speed -le 1066) { $ddrType = "DDR2 (Guess)" }
-        elseif ($speed -ge 800 -and $speed -le 2133) { $ddrType = "DDR3 (Guess)" }
-        elseif ($speed -ge 2133 -and $speed -le 4266) { $ddrType = "DDR4 (Guess)" }
-        elseif ($speed -ge 4800) { $ddrType = "DDR5 (Guess)" }
-        else { $ddrType = "Unknown" }
+        $ddrType = $ddrTypeMapping | Where-Object { $speed -ge $_.Start -and $speed -le $_.End } | Select-Object -ExpandProperty Type
+        $ddrType = if ($ddrType) { $ddrType } else { "Unknown" }
         
-        $formFactor = if ($m.FormFactor -eq 8) {"DIMM"} else {"SODIMM"}
+        if ($m.FormFactor -eq 8) {
+            $formFactor = "DIMM"
+        } elseif ($m.FormFactor -eq 12) {
+            $formFactor = "SODIMM"
+        } else {
+            $formFactor = "Unknown Form Factor"
+        }
+
         $ramSizeGB = [math]::Round($m.Capacity / 1GB)
         
         $ramInfo += "Module ${moduleIndex}: $formFactor, $ddrType, ${ramSizeGB}GB, ${speed}MHz"
         $moduleIndex++
     }
+    
     return $ramInfo -join '; '
 }
 
-# Function to get machine manufacturer and serial number
+
+# get battery info
+function Get-BatteryInfo {
+    $battery = Get-WmiObject -Class Win32_Battery
+    if ($null -eq $battery) {
+        return ""  # no battery, skip
+    }
+    $status = $battery.Status
+    if ($status -ne "OK") {
+        $charge = $battery.EstimatedChargeRemaining
+        $runtime = $battery.EstimatedRunTime
+        return "Battery: Status $status, Charge $charge%, Runtime $runtime min"
+    }
+    return ""
+}
+
+# machine manufacturer and serial
 function Get-MachineInfo {
     $bios = Get-WmiObject -Class Win32_BIOS
     return "Manufacturer: $($bios.Manufacturer); SerialNumber: $($bios.SerialNumber)"
 }
 
-# Initialize debug file if debugMode is true
+# debug initialization
 if ($debugMode) {
     if (Test-Path $debugFilePath) {
         Remove-Item -Path $debugFilePath
@@ -58,8 +87,7 @@ if ($debugMode) {
     New-Item -Path $debugFilePath -ItemType File
 }
 
-
-# Collect info
+# collect info
 Write-DebugInfo "DEBUG: Collecting disk information..."
 $diskInfo = Get-DiskInfo
 Write-DebugInfo "DEBUG: Disk Info: $diskInfo"
@@ -72,17 +100,21 @@ Write-DebugInfo "DEBUG: Collecting machine information..."
 $machineInfo = Get-MachineInfo
 Write-DebugInfo "DEBUG: Machine Info: $machineInfo"
 
-# Check if upgrades are needed
+Write-DebugInfo "DEBUG: Collecting battery information..."
+$batteryInfo = Get-BatteryInfo
+Write-DebugInfo "DEBUG: Battery Info: $batteryInfo"
+
+# are upgrades needed?
 $upgradeNeeded = $false
 $upgradeInfo = @()
 
-# Check Disk
+# check disk
 if ($diskInfo -match $targetMediaType) {
     $upgradeNeeded = $true
     $upgradeInfo += "Disk: $diskInfo"
 }
 
-# Check RAM
+# check ram
 $ramSizeTotal = 0
 foreach ($item in ($ramInfo -split "; ")) {
     if ($item -match "(\d+)GB") {
@@ -94,14 +126,16 @@ if ($ramSizeTotal -lt $minRAMSizeGB) {
     $upgradeInfo += "RAM: $ramInfo"
 }
 
-# Prepare output with timestamp
-$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-
-if ($upgradeNeeded) {
-    $outputInfo = "$timestamp; 1; Machine Info: $machineInfo; " + ($upgradeInfo -join "; ")
-    Set-Content -Path $outputFilePath -Value $outputInfo
-} else {
-    if (Test-Path $outputFilePath) {
-        Remove-Item -Path $outputFilePath
-    }
+# check battery
+if ($batteryInfo -ne "") {
+    $upgradeNeeded = $true
+    $upgradeInfo += "Battery: $batteryInfo"
 }
+
+# prepare output
+$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+$upgradeStatus = if ($upgradeNeeded) { 1 } else { 0 }
+$outputInfo = "$timestamp; $upgradeStatus; Machine Info: $machineInfo; " + ($upgradeInfo -join "; ")
+
+# write output
+Set-Content -Path $outputFilePath -Value $outputInfo
