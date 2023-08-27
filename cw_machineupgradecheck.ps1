@@ -91,7 +91,7 @@ function Get-RAMInfo {
         $formFactor = $formFactorMap[$m.FormFactor] -or "Unknown Form Factor"
         $speed = $m.Speed
 
-        # Speed-to-type mapping. Update as needed.
+        # mapping speed to type
         $ddrType = switch ($speed) {
             { $_ -in 400..1066 } { "DDR2 (best guess)" }
             { $_ -in 800..2133 } { "DDR3 (best guess)" }
