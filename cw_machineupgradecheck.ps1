@@ -1,8 +1,23 @@
-# This script checks some basic machine info: system drive and RAM type/size in order to quote on upgrades/replacements.
-# It also returns the manufacturer and serial number for manual verification.
-# 
-# It returns a 1 if an upgrade is indicated, with the details placed in a text file in the C Windows Temp folder.
-# It returns a 0 if no upgrade is indicated.
+# Script: Machine Upgrade Checker for ConnectWise Automate Agents
+#
+# Description:
+#   - Assesses a Windows machine to determine if a hardware upgrade is needed.
+#   - Specifically checks:
+#       1. Type and size of system drive
+#       2. RAM type and size
+#   - Gathers machine manufacturer and serial number for verification.
+#
+# Outputs:
+#   1. If upgrade needed: Returns '1' and writes details to C:\Windows\Temp\cw_machine_upgrade_info.txt
+#   2. If no upgrade needed: Returns '0'
+#
+# Settings:
+#   - $minRAMSizeGB: Minimum acceptable RAM size in GB.
+#   - $upgradeFromMediaType: Type of media to trigger an upgrade (e.g., "HDD").
+#   - $outputFilePath: File path for storing machine info if an upgrade is needed.
+#   - $debugMode: If $true, debug information is saved.
+#   - $debugFilePath: File path for storing debug info.
+#
 
 # settings
 $minRAMSizeGB = 8
@@ -11,8 +26,31 @@ $outputFilePath = "C:\Windows\Temp\cw_machine_upgrade_info.txt"
 $debugMode = $true
 $debugFilePath = "C:\Windows\Temp\cw_machine_upgrade_debug.txt"
 
+# Check if disk upgrade is needed
+function Test-DiskUpgrade {
+    param ([string]$diskInfo)
+    $mediaType, $sizeGB, $health = $diskInfo -split ', '
+    
+    if ($mediaType -eq $upgradeFromMediaType -or $health -ne "OK") {
+        return $true
+    } else {
+        return $false
+    }
+}
+
+# Check if RAM upgrade is needed
+function Test-RAMUpgrade {
+    param ([int]$totalRamSize)
+    
+    if ($totalRamSize -lt $minRAMSizeGB) {
+        return $true
+    } else {
+        return $false
+    }
+}
+
 # debug function
-function Write-DebugInfo {
+function Set-DebugInfo {
     param ([string]$message)
     if ($debugMode) {
         $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -20,13 +58,21 @@ function Write-DebugInfo {
     }
 }
 
-# c drive type and size
+# c drive info and health
 function Get-DiskInfo {
     $systemDiskPartition = Get-Partition | Where-Object { $_.DriveLetter -eq 'C' }
     $systemDisk = Get-PhysicalDisk | Where-Object { $_.DeviceID -eq $systemDiskPartition.DiskNumber }
     $sizeGB = [math]::Round($systemDisk.Size / 1GB)
-    return "$($systemDisk.MediaType), ${sizeGB}GB"
+    $healthStatus = $systemDisk.OperationalStatus
+
+    if ($healthStatus -ne "OK") {
+        Set-Host "Drive health is not OK. Status: $healthStatus"
+        Set-DebugInfo "Drive health is not OK. Status: $healthStatus"
+    }
+
+    return "$($systemDisk.MediaType), ${sizeGB}GB, Health: $healthStatus"
 }
+
 
 # ram size, speed, form factor
 function Get-RAMInfo {
@@ -75,30 +121,25 @@ if ($debugMode) {
     New-Item -Path $debugFilePath -ItemType File
 }
 
-# collect info
-Write-DebugInfo "Collecting disk information..."
+# Collect info
 $diskInfo = Get-DiskInfo
-
-Write-DebugInfo "Collecting RAM information..."
-$ramInfo, $ramSizeTotal = Get-RAMInfo
-
-Write-DebugInfo "Collecting machine information..."
+$ramInfo, $totalRamSize = Get-RAMInfo
 $machineInfo = Get-MachineInfo
 
 # Check for upgrades
 $upgradeNeeded = $false
-$upgradeInfo = @()
+$upgradeDetails = @()
 
-# Check disk
-if ($diskInfo -match $upgradeFromMediaType) {
+# Disk upgrade check
+if (Test-DiskUpgrade -diskInfo $diskInfo) {
     $upgradeNeeded = $true
-    $upgradeInfo += "Disk: $diskInfo"
+    $upgradeDetails += "Disk_Needs_Upgrade: $diskInfo"
 }
 
-# Check RAM
-if ($ramSizeTotal -lt $minRAMSizeGB) {
+# RAM upgrade check
+if (Test-RAMUpgrade -totalRamSize $totalRamSize) {
     $upgradeNeeded = $true
-    $upgradeInfo += "RAM: $ramInfo"
+    $upgradeDetails += "RAM_Needs_Upgrade: $ramInfo"
 }
 
 # prepare output for the text file only if upgrade needed
@@ -108,7 +149,15 @@ if ($upgradeNeeded) {
     }
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $upgradeStatus = 1
-    $outputInfo = "$timestamp; $upgradeStatus; Machine Info: $machineInfo; " + ($upgradeInfo -join "; ")
+    
+    # Modified the output format
+    $outputInfo = @"
+Timestamp: $timestamp
+Upgrade Status: $upgradeStatus
+Machine Info: $machineInfo
+$(if ($diskInfo -match $upgradeFromMediaType -or $diskInfo -notmatch "Health: OK") {"Disk: $diskInfo (Needs Upgrade)"})
+$(if ($ramSizeTotal -lt $minRAMSizeGB) {"RAM: $ramInfo (Needs Upgrade)"})
+"@
     Set-Content -Path $outputFilePath -Value $outputInfo
 } else {
     $upgradeStatus = 0
