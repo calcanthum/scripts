@@ -1,8 +1,13 @@
+# This script checks some basic machine info, like system drive type and size, RAM type and size, and the battery status
+# in order to quote on upgrades/replacements. It also returns the manufacturer and serial number for manual verification.
+# It returns a 1 if an upgrade is indicated, with the details placed in a text file in the C Windows Temp folder.
+# It returns a 0 if no upgrade is indicated.
+
 # settings
 $minRAMSizeGB = 8
 $targetMediaType = "HDD"
 $outputFilePath = "C:\Windows\Temp\cw_machine_upgrade_info.txt"
-$debugMode = $true
+$debugMode = $false
 $debugFilePath = "C:\Windows\Temp\cw_machine_upgrade_debug.txt"
 
 # debug
