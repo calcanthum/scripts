@@ -22,7 +22,7 @@
 $minRAMSizeGB = 8
 $upgradeFromMediaType = "HDD"
 $outputFilePath = "C:\Windows\Temp\cw_machine_upgrade_info.txt"
-$debugMode = $true
+$debugMode = $false
 $debugFilePath = "C:\Windows\Temp\cw_machine_upgrade_debug.txt"
 
 # Check if disk upgrade is needed
