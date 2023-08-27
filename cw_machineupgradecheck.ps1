@@ -17,7 +17,6 @@
 #   - $outputFilePath: File path for storing machine info if an upgrade is needed.
 #   - $debugMode: If $true, debug information is saved.
 #   - $debugFilePath: File path for storing debug info.
-#
 
 # settings
 $minRAMSizeGB = 8
@@ -152,11 +151,12 @@ if ($upgradeNeeded) {
     
     # Modified the output format
     $outputInfo = @"
-Timestamp: $timestamp
-Upgrade Status: $upgradeStatus
-Machine Info: $machineInfo
-$(if ($diskInfo -match $upgradeFromMediaType -or $diskInfo -notmatch "Health: OK") {"Disk: $diskInfo (Needs Upgrade)"})
-$(if ($ramSizeTotal -lt $minRAMSizeGB) {"RAM: $ramInfo (Needs Upgrade)"})
+    Timestamp: $timestamp
+    Upgrade Status: $upgradeStatus
+    Machine Info: $machineInfo
+
+    $(if ($diskInfo -match $upgradeFromMediaType -or $diskInfo -notmatch "Health: OK") {"Disk: $diskInfo (Needs Upgrade)"})
+    $(if ($ramSizeTotal -lt $minRAMSizeGB) {"RAM: $ramInfo (Needs Upgrade)"})
 "@
     Set-Content -Path $outputFilePath -Value $outputInfo
 } else {
