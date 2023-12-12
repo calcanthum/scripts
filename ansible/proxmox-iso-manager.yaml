@@ -1,0 +1,90 @@
+---
+- name: Update ISOs on Proxmox Server
+  hosts: proxmox
+  become: yes
+  vars:
+    api_user: 'root@pam'
+    api_password: 'YOUR_PASSWORD'
+    api_host: 'YOUR_PROXMOX_HOST'
+    validate_certs: no
+  tasks:
+    - name: List nodes
+      proxmoxer:
+        api_user: "{{ api_user }}"
+        api_password: "{{ api_password }}"
+        api_host: "{{ api_host }}"
+        validate_certs: "{{ validate_certs }}"
+        resource: 'nodes'
+      register: nodes
+
+    - name: List VMs
+      proxmoxer:
+        api_user: "{{ api_user }}"
+        api_password: "{{ api_password }}"
+        api_host: "{{ api_host }}"
+        validate_certs: "{{ validate_certs }}"
+        resource: 'nodes/{{ item }}/qemu'
+      register: vms
+      with_items: "{{ nodes.results | map(attribute='node') | list }}"
+
+    - name: Define remote ISO URLs and local filenames
+      set_fact:
+        iso_urls:
+          "https://releases.ubuntu.com/18.04.6/ubuntu-18.04.6-desktop-amd64.iso": "ubuntu18.iso"
+          "https://releases.ubuntu.com/20.04.6/ubuntu-20.04.6-desktop-amd64.iso": "ubuntu20.iso"
+          "https://releases.ubuntu.com/22.04/ubuntu-22.04.3-desktop-amd64.iso": "ubuntu22.iso"
+
+    - name: Initialize list of mounted ISOs
+      set_fact:
+        mounted_isos: []
+
+    - name: Check if ISO is mounted
+      proxmoxer:
+        api_user: "{{ api_user }}"
+        api_password: "{{ api_password }}"
+        api_host: "{{ api_host }}"
+        validate_certs: "{{ validate_certs }}"
+        resource: 'nodes/{{ item.0 }}/qemu/{{ item.1 }}/config'
+      register: vm_configs
+      with_nested: 
+        - "{{ nodes.results | map(attribute='node') | list }}"
+        - "{{ vms.results | map(attribute='vmid') | list }}"
+      ignore_errors: true
+
+    - name: Add mounted ISOs to list
+      set_fact:
+        mounted_isos: "{{ mounted_isos + [item.1.config.cdrom] }}"
+      with_subelements:
+        - "{{ vm_configs.results }}"
+        - config
+      when: "'cdrom' in item.1.config"
+
+    - name: Check and update ISOs
+      block:
+        - name: Get last modified date of remote ISO
+          uri:
+            url: "{{ item.key }}"
+            method: HEAD
+          register: remote_iso_head
+          changed_when: false
+
+        - name: Get last modified date of local ISO
+          stat:
+            path: "/vol0/proxmox/template/iso/{{ item.value }}"
+          register: local_iso
+
+        - name: Determine if ISO is mounted
+          set_fact:
+            is_mounted: "{{ item.value in mounted_isos }}"
+
+        - name: Download ISO if remote is newer and not mounted
+          get_url:
+            url: "{{ item.key }}"
+            dest: "/vol0/proxmox/template/iso/{{ item.value }}"
+          when: (remote_iso_head.headers['Last-Modified'] | date_to_unixtime) > (local_iso.stat.mtime | default(0)) and not is_mounted
+
+        - name: Display message if ISO is out of date but mounted
+          debug:
+            msg: "ISO {{ item.value }} is out of date, but is mounted by VM ID's: {{ mounted_isos | join(', ') }}"
+          when: (remote_iso_head.headers['Last-Modified'] | date_to_unixtime) > (local_iso.stat.mtime | default(0)) and is_mounted
+      with_dict: "{{ iso_urls }}"
