@@ -4,10 +4,14 @@
   become: yes
   vars:
     api_user: 'root@pam'
-    api_password: 'YOUR_PASSWORD'
-    api_host: 'YOUR_PROXMOX_HOST'
+    api_password: 'INSERT_API_PASSWORD'
+    api_host: 'INSERT_PROXMOX_HOST'
     validate_certs: no
   tasks:
+    - name: Include ISO sources
+      include_vars:
+        file: iso-sources.yml
+        
     - name: List nodes
       proxmoxer:
         api_user: "{{ api_user }}"
@@ -26,13 +30,6 @@
         resource: 'nodes/{{ item }}/qemu'
       register: vms
       with_items: "{{ nodes.results | map(attribute='node') | list }}"
-
-    - name: Define remote ISO URLs and local filenames
-      set_fact:
-        iso_urls:
-          "https://releases.ubuntu.com/18.04.6/ubuntu-18.04.6-desktop-amd64.iso": "ubuntu18.iso"
-          "https://releases.ubuntu.com/20.04.6/ubuntu-20.04.6-desktop-amd64.iso": "ubuntu20.iso"
-          "https://releases.ubuntu.com/22.04/ubuntu-22.04.3-desktop-amd64.iso": "ubuntu22.iso"
 
     - name: Initialize list of mounted ISOs
       set_fact:
