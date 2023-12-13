@@ -6,6 +6,7 @@
     api_password: 'INSERT_API_PASSWORD'
     api_host: 'INSERT_PROXMOX_HOST'
     validate_certs: no
+    iso_base_path: "/vol0/proxmox/template/iso/"
   tasks:
     - name: Include ISO sources
       include_vars:
@@ -13,19 +14,11 @@
         
     - name: List nodes
       proxmoxer:
-        api_user: "{{ api_user }}"
-        api_password: "{{ api_password }}"
-        api_host: "{{ api_host }}"
-        validate_certs: "{{ validate_certs }}"
         resource: 'nodes'
       register: nodes
 
     - name: List VMs
       proxmoxer:
-        api_user: "{{ api_user }}"
-        api_password: "{{ api_password }}"
-        api_host: "{{ api_host }}"
-        validate_certs: "{{ validate_certs }}"
         resource: 'nodes/{{ item }}/qemu'
       register: vms
       with_items: "{{ nodes.results | map(attribute='node') | list }}"
@@ -36,10 +29,6 @@
 
     - name: Check if ISO is mounted
       proxmoxer:
-        api_user: "{{ api_user }}"
-        api_password: "{{ api_password }}"
-        api_host: "{{ api_host }}"
-        validate_certs: "{{ validate_certs }}"
         resource: 'nodes/{{ item.0 }}/qemu/{{ item.1 }}/config'
       register: vm_configs
       with_nested: 
@@ -66,7 +55,7 @@
 
         - name: Get last modified date of local ISO
           stat:
-            path: "/vol0/proxmox/template/iso/{{ item.value }}"
+            path: "{{ iso_base_path }}{{ item.value }}"
           register: local_iso
 
         - name: Determine if ISO is mounted
@@ -76,7 +65,7 @@
         - name: Download ISO if remote is newer and not mounted
           get_url:
             url: "{{ item.key }}"
-            dest: "/vol0/proxmox/template/iso/{{ item.value }}"
+            dest: "{{ iso_base_path }}{{ item.value }}"
           when: (remote_iso_head.headers['Last-Modified'] | date_to_unixtime) > (local_iso.stat.mtime | default(0)) and not is_mounted
 
         - name: Display message if ISO is out of date but mounted
