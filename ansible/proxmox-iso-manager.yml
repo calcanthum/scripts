@@ -1,12 +1,12 @@
 - name: Update ISOs on Proxmox Server
   hosts: proxmox
   become: yes
+  vars_files:
+    - credentials.yml
   vars:
-    api_user: 'root@pam'
-    api_password: 'INSERT_API_PASSWORD'
-    api_host: 'INSERT_PROXMOX_HOST'
     validate_certs: no
     iso_base_path: "/vol0/proxmox/template/iso/"
+    
   tasks:
     - name: Include ISO sources
       include_vars:
