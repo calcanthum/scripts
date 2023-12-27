@@ -1,10 +1,8 @@
 <#
 .SYNOPSIS
-
 A script to export a collection of policy configurations from Exchange Online to local XML files.
 
 .DESCRIPTION
-
 This script connects to an Exchange Online instance without showing the default connection banner.
 It then retrieves the name of the current organization and uses this name to create an export
 directory in the user's home directory. If the directory does not exist, it is created.
@@ -13,22 +11,18 @@ exporting each policy's configuration to an XML file in the export directory.
 Finally, it disconnects from the Exchange Online session without user confirmation.
 
 .INPUTS
-
 None. The script is self-contained and does not accept any inputs.
 
 .OUTPUTS
-
 XML files. For each policy type, an XML file is created in the user's home directory
 under a subdirectory named after the current organization.
 
 .EXAMPLE
-
 PS C:\> .\ExportPolicies.ps1
 
 This command runs the script and exports policy configurations to the user's home directory.
 
 .NOTES
-
 The script requires the ExchangeOnlineManagement module to be installed.
 The script creates one XML file for each policy type in the predefined list.
 The XML file includes the full configuration for that policy type.
