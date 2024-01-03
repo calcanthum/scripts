@@ -1,0 +1,72 @@
+---
+- name: Google Cloud disk creation and data transfer
+  hosts: localhost
+  gather_facts: no
+  vars:
+    project: ""
+    zone: ""
+    instance_name: ""
+    disk_name: "new-disk"
+    extra_space_gb: 10
+    service_account_file: ""
+
+  tasks:
+    - name: Get size of sda2
+      shell: df --output=size -BG /dev/sda2 | tail -1 | awk '{print substr($1, 1, length($1)-1)}'
+      delegate_to: "{{ instance_name }}"
+      register: sda2_size
+
+    - name: Calculate disk size
+      set_fact:
+        disk_size_gb: "{{ (sda2_size.stdout | int) + extra_space_gb }}"
+
+    - name: Create a new disk in GCP
+      google.cloud.gcp_compute_disk:
+        name: "{{ disk_name }}"
+        size_gb: "{{ disk_size_gb }}"
+        project: "{{ project }}"
+        zone: "{{ zone }}"
+        auth_kind: serviceaccount
+        service_account_file: "{{ service_account_file }}"
+        state: present
+
+    - name: Attach the new disk to the VM
+      google.cloud.gcp_compute_attached_disk:
+        disk: "{{ disk_name }}"
+        instance: "{{ instance_name }}"
+        project: "{{ project }}"
+        zone: "{{ zone }}"
+        auth_kind: serviceaccount
+        service_account_file: "{{ service_account_file }}"
+        mode: READ_WRITE
+        state: present
+
+    - name: Partition, format, and mount the new disk
+      block:
+        - name: Partition the new disk
+          command: echo -e "n\np\n1\n\n\nw" | fdisk /dev/sdb
+
+        - name: Format the partition with XFS
+          filesystem:
+            fstype: xfs
+            dev: /dev/sdb1
+
+        - name: Create mount directory
+          file:
+            path: /mnt/temp_sdb1
+            state: directory
+
+        - name: Mount the partition
+          mount:
+            path: /mnt/temp_sdb1
+            src: /dev/sdb1
+            fstype: xfs
+            state: mounted
+      delegate_to: "{{ instance_name }}"
+
+    - name: Rsync data to new disk
+      shell: >
+        rsync -aHAXxv --numeric-ids
+        --exclude={"/dev/*","/proc/*","/sys/*","/tmp/*","/run/*","/mnt/*","/media/*","/lost+found"}
+        / /mnt/temp_sdb1
+      delegate_to: "{{ instance_name }}"
