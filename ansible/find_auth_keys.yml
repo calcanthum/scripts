@@ -1,0 +1,14 @@
+- name: Find users with authorized_keys set in their home directory
+  hosts: all
+  tasks:
+    - name: Look for authorized_keys in user home directories
+      find:
+        paths: "/home"
+        patterns: "authorized_keys"
+        recurse: yes
+        file_type: file
+      register: found_keys
+
+    - name: Display users with authorized_keys
+      debug:
+        msg: "{{ found_keys.files | map(attribute='path') | list }}"
