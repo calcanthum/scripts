@@ -1,0 +1,33 @@
+- name: Audit and remediate ghost users with shell access and SSH keys, excluding specific users
+  hosts: all
+  become: yes
+  vars:
+    excluded_users: ['alice', 'bob', 'root']  # Users to leave alone
+
+  tasks:
+    - name: Find users with /bin/bash
+      command: awk -F: '/\/bin\/bash$/ {print $1}' /etc/passwd
+      register: bash_users
+      changed_when: False
+
+    - name: Change shell to /bin/false for ghost users
+      user:
+        name: "{{ item }}"
+        shell: /bin/false
+      loop: "{{ bash_users.stdout_lines }}"
+      when: item not in excluded_users
+
+    - name: Search for authorized_keys in all home directories
+      find:
+        paths: "/home"
+        patterns: "authorized_keys"
+        recurse: yes
+        file_type: file
+      register: found_keys
+
+    - name: Remove found authorized_keys files
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ found_keys.files }}"
+      when: item.path.split('/')[2] not in excluded_users
