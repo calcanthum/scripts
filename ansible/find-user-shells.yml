@@ -4,7 +4,7 @@
     - name: Get list of all users with /bin/bash
       command: awk -F: '/\/bin\/bash$/ {print $1}' /etc/passwd
       register: bash_users
-      changed_when: False
+      changed_when: false
 
     - name: Display users with /bin/bash
       debug:
