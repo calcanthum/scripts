@@ -2,7 +2,7 @@
   hosts: all
   tasks:
     - name: Get list of all users with /bin/bash
-      command: awk -F: '/\/bin\/bash$/ {print $1}' /etc/passwd
+      command: "awk -F: '/\/bin\/bash$/ {print $1}' /etc/passwd"
       register: bash_users
       changed_when: false
 
