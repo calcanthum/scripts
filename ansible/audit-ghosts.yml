@@ -1,6 +1,6 @@
 - name: Audit and remediate ghost users with shell access and SSH keys with whitelist
   hosts: all
-  become: yes
+  become: true
   vars:
     whitelist: ['alice', 'bob', 'root']  # Users to leave alone
 
@@ -8,7 +8,7 @@
     - name: Find users with /bin/bash
       command: awk -F: '/\/bin\/bash$/ {print $1}' /etc/passwd
       register: bash_users
-      changed_when: False
+      changed_when: false
 
     - name: Change shell to /bin/false for ghost users
       user:
@@ -21,7 +21,7 @@
       find:
         paths: "/home"
         patterns: "authorized_keys"
-        recurse: yes
+        recurse: true
         file_type: file
       register: found_keys
 
