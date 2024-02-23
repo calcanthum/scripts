@@ -12,12 +12,7 @@ service_name_mapping = {
     'redis': 'redis-server.service',
     'bacula': 'bacula-director.service',
     'rabbitmq': 'rabbitmq-server.service',
-    'elasticsearch': 'elasticsearch.service',
-    'solr': 'solr.service',
-    'activemq': 'activemq.service',
     'mattermost-server': 'mattermost.service',
-    'zulip-server': 'zulip-server.service',
-    'influxdb': 'influxdb.service',
 }
 
 def get_installed_packages():
