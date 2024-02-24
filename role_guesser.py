@@ -98,7 +98,6 @@ def guess_server_role(packages_with_versions, active_services):
                 role_info['packages'].append({'name': pkg, 'version': version})
                 installed_roles[role] = role_info
                 
-                # Modified logic to handle custom service name mappings
                 service_name = service_name_mapping.get(pkg, f"{pkg}.service")
                 for service_info in active_services:
                     if service_info[0].startswith(service_name.replace('.service', '')):
