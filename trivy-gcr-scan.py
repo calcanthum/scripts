@@ -2,93 +2,93 @@ import subprocess
 import json
 import sys
 
-def run_command(cmd):
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        return None, result.stderr
-    return json.loads(result.stdout), None
+def execute_subprocess_command(command):
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        return json.loads(result.stdout), None
+    except subprocess.CalledProcessError as e:
+        return None, e.stderr
 
-def is_registry_public(registry):
-    _, error = run_command(['gcloud', 'container', 'images', 'list', '--repository', f'gcr.io/{registry}', '--format', 'json'])
+def check_registry_accessibility(registry):
+    _, error = execute_subprocess_command(['gcloud', 'container', 'images', 'list', '--repository', f'gcr.io/{registry}', '--format', 'json'])
     return error is None
 
-def get_authenticated_accounts():
-    accounts, _ = run_command(['gcloud', 'auth', 'list', '--format', 'json'])
+def list_active_gcloud_accounts():
+    accounts, _ = execute_subprocess_command(['gcloud', 'auth', 'list', '--format', 'json'])
     if accounts is None:
         return []
     return [account['account'] for account in accounts if account.get('status') == 'ACTIVE']
 
-def get_gcr_images(registry):
-    images, _ = run_command(['gcloud', 'container', 'images', 'list', '--repository', f'gcr.io/{registry}', '--format', 'json'])
+def list_gcr_repository_images(registry):
+    images, _ = execute_subprocess_command(['gcloud', 'container', 'images', 'list', '--repository', f'gcr.io/{registry}', '--format', 'json'])
     if images is None:
         return []
     return [image['name'] for image in images]
 
-def scan_image_with_trivy(image, verbose=False):
-    if verbose:
-        cmd = ['trivy', '--quiet', 'image', '--severity', 'CRITICAL,HIGH,MEDIUM,LOW', image]
-    else:
-        cmd = ['trivy', '--quiet', 'image', '--severity', 'CRITICAL,HIGH,MEDIUM,LOW', '--format', 'json', image]
+def scan_container_image(image, detailed_report=False):
+    command = ['trivy', '--quiet', 'image', '--severity', 'CRITICAL,HIGH,MEDIUM,LOW', image]
+    if not detailed_report:
+        command.append('--format')
+        command.append('json')
+    
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        
+        if not result.stdout.strip():
+            print("No results from Trivy scan.")
+            return
+        
+        if detailed_report:
+            print(result.stdout)
+        else:
+            vulnerabilities = json.loads(result.stdout)
+            summarize_vulnerabilities(vulnerabilities)
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to scan image: {e.stderr}. Ensure Trivy is installed and has the necessary permissions.")
+        sys.exit(1)
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
-
-    if not result.stdout.strip():
-        print("No results from Trivy scan.")
-        return
-
-    if result.returncode != 0:
-        print(f"Failed to scan image: {result.stderr}. Ensure Trivy is installed and has the necessary permissions.")
-        exit(1)
-
-    if verbose:
-        print(result.stdout)
-    else:
-        vulnerabilities = json.loads(result.stdout)
-        summary = {'CRITICAL': {'count': 0, 'cves': []}, 'HIGH': {'count': 0}, 'MEDIUM': {'count': 0}, 'LOW': {'count': 0}}
-
-        for result in vulnerabilities.get('Results', []):
-            if 'Vulnerabilities' in result:
-                for vuln in result['Vulnerabilities']:
-                    severity = vuln['Severity']
-                    summary[severity]['count'] += 1
-                    if severity == 'CRITICAL':
-                        summary[severity]['cves'].append(vuln['VulnerabilityID'])
-
-        for severity, data in summary.items():
-            print(f"{severity}: {data['count']} vulnerabilities")
-            if severity == 'CRITICAL' and data['cves']:
-                print(f"Critical CVEs: {', '.join(data['cves'])}")
+def summarize_vulnerabilities(vulnerabilities):
+    summary = {'CRITICAL': {'count': 0, 'cves': []}, 'HIGH': {'count': 0}, 'MEDIUM': {'count': 0}, 'LOW': {'count': 0}}
+    
+    for result in vulnerabilities.get('Results', []):
+        for vuln in result.get('Vulnerabilities', []):
+            severity = vuln['Severity']
+            summary[severity]['count'] += 1
+            if severity == 'CRITICAL':
+                summary[severity]['cves'].append(vuln['VulnerabilityID'])
+                
+    for severity, data in summary.items():
+        print(f"{severity}: {data['count']} vulnerabilities")
+        if severity == 'CRITICAL' and data['cves']:
+            print(f"Critical CVEs: {', '.join(data['cves'])}")
 
 def main():
-    registry_input = input("Enter your registry suffix (e.g., for gcr.io/my-project, enter 'my-project'): ")
-    if is_registry_public(registry_input):
+    registry_suffix = input("Enter your registry suffix (e.g., 'my-project' for gcr.io/my-project): ")
+    if check_registry_accessibility(registry_suffix):
         print("Registry is publicly accessible. Proceeding without authentication...")
     else:
-        accounts = get_authenticated_accounts()
-        if not accounts:
-            print("No authenticated accounts found and the registry is not publicly accessible. Please authenticate using 'gcloud auth login'")
+        authenticated_accounts = list_active_gcloud_accounts()
+        if not authenticated_accounts:
+            print("No authenticated accounts found. Registry is not publicly accessible. Please authenticate with 'gcloud auth login'.")
             sys.exit(1)
         
-        print("Authenticated accounts found:")
-        for i, account in enumerate(accounts, start=1):
-            print(f"{i}. {account}")
+        print("Authenticated accounts found. Please select an account to use:")
+        for index, account in enumerate(authenticated_accounts, start=1):
+            print(f"{index}. {account}")
         
-        selected_account_index = int(input("Select an account to use (enter number): ")) - 1
-        selected_account = accounts[selected_account_index]
-        print(f"Selected account: {selected_account}")
+        account_selection = int(input("Select an account by number: ")) - 1
+        print(f"Using account: {authenticated_accounts[account_selection]}")
     
-    images = get_gcr_images(registry_input)
-    
+    images = list_gcr_repository_images(registry_suffix)
     if not images:
-        print("No images found in the specified registry.")
+        print("No images found in specified registry.")
         return
     
-    verbose_input = input("Would you like a detailed scan report? (yes/no): ").lower()
-    verbose = verbose_input in ["yes", "y"]
+    detailed_scan = input("Detailed scan report? (yes/no): ").strip().lower() in ["yes", "y"]
     
     for image in images:
-        print(f"Scanning {image}...")
-        scan_image_with_trivy(image, verbose)
+        print(f"Scanning image: {image}")
+        scan_container_image(image, detailed_scan)
 
 if __name__ == "__main__":
     main()
